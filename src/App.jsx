@@ -50,12 +50,13 @@ import {
 // ============================================================================
 
 const FIREBASE_CONFIG = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: "AIzaSyA4o4XsS-LUxR6uiSyHWM5mQJPHtIEb7v0",
+  authDomain: "kitamain-couple.firebaseapp.com",
+  projectId: "kitamain-couple",
+  storageBucket: "kitamain-couple.firebasestorage.app",
+  messagingSenderId: "1052275748482",
+  appId: "1:1052275748482:web:cd166d85bfb00aaacb8e9b",
+   measurementId: "G-6CCY92729D"
 };
 
 let db = null;
