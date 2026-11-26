@@ -50,13 +50,13 @@ import {
 // ============================================================================
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyA4o4XsS-LUxR6uiSyHWM5mQJPHtIEb7v0",
+  aapiKey: "AIzaSyA4o4XsS-LUxR6uiSyHWM5mQJPHtIEb7v0",
   authDomain: "kitamain-couple.firebaseapp.com",
   projectId: "kitamain-couple",
   storageBucket: "kitamain-couple.firebasestorage.app",
   messagingSenderId: "1052275748482",
   appId: "1:1052275748482:web:cd166d85bfb00aaacb8e9b",
-   measurementId: "G-6CCY92729D"
+  measurementId: "G-6CCY92729D"
 };
 
 let db = null;
@@ -381,6 +381,7 @@ export default function App() {
     week: null,
   });
   const [isExportingImage, setIsExportingImage] = useState(false);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState(null);
 
   // Custom Confirmation Dialog
   const [confirmDialog, setConfirmDialog] = useState({
@@ -502,7 +503,9 @@ export default function App() {
   );
 
   const remainingSafeBudget = monthlyBudget - totalActualExpense;
+  const remainingPlanBudget = monthlyBudget - totalEstimatedPlan;
   const usagePercentage = monthlyBudget > 0 ? Math.round((totalActualExpense / monthlyBudget) * 100) : 0;
+  const planUsagePercentage = monthlyBudget > 0 ? Math.round((totalEstimatedPlan / monthlyBudget) * 100) : 0;
   const isPlanOverBudget = totalEstimatedPlan > monthlyBudget;
 
   const budgetStatus = useMemo(() => {
@@ -1205,7 +1208,7 @@ export default function App() {
   // HANDLERS: EXPORT & CETAK JADWAL MINGGUAN (IMAGE PNG & PDF PRINT)
   // ==========================================================================
 
-  const handleDownloadWeeklyImage = () => {
+  const handleDownloadWeeklyImage = async () => {
     if (!exportModal.week) return;
     setIsExportingImage(true);
 
@@ -1244,14 +1247,22 @@ export default function App() {
       ctx.strokeStyle = '#fecdd3';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.roundRect(24, 24, width - 48, height - 48, 24);
+      if (ctx.roundRect) {
+        ctx.roundRect(24, 24, width - 48, height - 48, 24);
+      } else {
+        ctx.rect(24, 24, width - 48, height - 48);
+      }
       ctx.fill();
       ctx.stroke();
 
       // Header Banner
       ctx.fillStyle = '#e11d48';
       ctx.beginPath();
-      ctx.roundRect(24, 24, width - 48, 108, [24, 24, 0, 0]);
+      if (ctx.roundRect) {
+        ctx.roundRect(24, 24, width - 48, 108, [24, 24, 0, 0]);
+      } else {
+        ctx.rect(24, 24, width - 48, 108);
+      }
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
@@ -1339,7 +1350,11 @@ export default function App() {
       const footerTop = height - 82;
       ctx.fillStyle = '#fff1f2';
       ctx.beginPath();
-      ctx.roundRect(40, footerTop, width - 80, 44, 12);
+      if (ctx.roundRect) {
+        ctx.roundRect(40, footerTop, width - 80, 44, 12);
+      } else {
+        ctx.rect(40, footerTop, width - 80, 44);
+      }
       ctx.fill();
 
       ctx.fillStyle = '#881337';
@@ -1350,14 +1365,44 @@ export default function App() {
       ctx.font = 'bold 15px sans-serif';
       ctx.fillText(formatRupiah(totalWeekEst), colX.cost - 10, footerTop + 27);
 
-      // Trigger Download PNG
+      const fileName = `Jadwal-KitaMain-${week.label.replace(/\s+/g, '-')}-${currentMonth}.png`;
       const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `Jadwal-KitaMain-${week.label.replace(/\s+/g, '-')}-${currentMonth}.png`;
-      link.href = dataUrl;
-      link.click();
+      setGeneratedImageUrl(dataUrl);
 
-      showToast(`Gambar jadwal ${week.label} berhasil diunduh!`);
+      // 1. Prioritaskan Web Share API (Sangat optimal untuk iOS Safari / Add to Home Screen)
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob && navigator.canShare && navigator.share) {
+        const file = new File([blob], fileName, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Jadwal ${week.label} - KitaMain`,
+            });
+            showToast(`Jadwal ${week.label} siap disimpan / dibagikan!`);
+            return;
+          } catch (shareErr) {
+            if (shareErr?.name === 'AbortError') return;
+          }
+        }
+      }
+
+      // 2. Fallback untuk browser desktop / Android standar
+      const isIOS =
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (!isIOS) {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(`Gambar jadwal ${week.label} berhasil diunduh!`);
+      } else {
+        showToast('Tekan & tahan gambar di bawah lalu pilih "Simpan ke Foto".');
+      }
     } catch (err) {
       console.error('Gagal membuat gambar jadwal:', err);
       showToast('Gagal mengekspor gambar jadwal.', 'warning');
@@ -1368,6 +1413,16 @@ export default function App() {
 
   const handlePrintWeeklyPDF = () => {
     if (!exportModal.week) return;
+    const isStandalone =
+      window.navigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+
+    // Pada mode Add to Home Screen iOS, window.open() diblokir sehingga gunakan window.print() langsung
+    if (isStandalone) {
+      window.print();
+      return;
+    }
+
     const week = exportModal.week;
     const weekPlans = monthlyPlans.filter((p) => (p.weekNumber || 1) === week.id);
     const monthLabel =
@@ -1397,7 +1452,7 @@ export default function App() {
 
     const printWindow = window.open('', '_blank', 'width=800,height=650');
     if (!printWindow) {
-      showToast('Pop-up diblokir browser. Izinkan pop-up untuk cetak PDF.', 'warning');
+      window.print();
       return;
     }
 
@@ -1529,17 +1584,22 @@ export default function App() {
           </div>
 
           <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-3.5 text-white shadow-md">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] uppercase tracking-wider text-slate-300 font-medium">
-                Sisa Budget Aman
-              </span>
+            <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-white/10">
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+                  Total Anggaran Bulan Ini
+                </span>
+                <span className="text-base font-extrabold text-white">
+                  {formatRupiah(monthlyBudget)}
+                </span>
+              </div>
               <div className="flex items-center gap-1.5">
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${budgetStatus.badgeBg}`}>
                   {budgetStatus.label} ({usagePercentage}%)
                 </span>
                 <button
                   onClick={handleOpenBudgetModal}
-                  className="inline-flex items-center gap-1 text-[11px] bg-white/10 hover:bg-white/20 text-white px-2 py-0.5 rounded-lg transition-colors"
+                  className="inline-flex items-center gap-1 text-[11px] bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded-lg transition-colors"
                 >
                   <Edit3 className="w-3 h-3" />
                   Edit
@@ -1547,34 +1607,83 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-baseline justify-between mb-2.5">
-              <div className={`text-2xl font-extrabold tracking-tight ${remainingSafeBudget < 0 ? 'text-rose-400' : 'text-white'}`}>
-                {formatRupiah(remainingSafeBudget)}
-              </div>
-              <div className="text-[11px] text-slate-300">
-                dari <span className="font-semibold text-white">{formatRupiah(monthlyBudget)}</span>
-              </div>
-            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Kartu 1: Anggaran vs Rencana Main */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-semibold text-amber-200/90">
+                      Sisa vs Rencana
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300">
+                      {planUsagePercentage}%
+                    </span>
+                  </div>
+                  <div
+                    className={`text-sm sm:text-base font-extrabold tracking-tight mb-1.5 ${
+                      remainingPlanBudget < 0 ? 'text-rose-400' : 'text-amber-300'
+                    }`}
+                  >
+                    {formatRupiah(remainingPlanBudget)}
+                  </div>
+                </div>
 
-            <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
-              <div
-                className={`h-full transition-all duration-500 rounded-full ${budgetStatus.barColor}`}
-                style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%` }}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 text-xs">
-              <div className="flex flex-col">
-                <span className="text-[10px] text-slate-400">Estimasi Rencana</span>
-                <span className={`font-semibold ${isPlanOverBudget ? 'text-amber-300' : 'text-slate-100'}`}>
-                  {formatRupiah(totalEstimatedPlan)}
-                </span>
+                <div>
+                  <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mb-1.5">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        planUsagePercentage > 100
+                          ? 'bg-rose-500'
+                          : planUsagePercentage >= 80
+                          ? 'bg-amber-400'
+                          : 'bg-sky-400'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, planUsagePercentage))}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Terencana:</span>
+                    <span className="font-semibold text-slate-200">
+                      {formatRupiah(totalEstimatedPlan)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col text-right">
-                <span className="text-[10px] text-slate-400">Pengeluaran Riil</span>
-                <span className="font-semibold text-emerald-300">
-                  {formatRupiah(totalActualExpense)}
-                </span>
+
+              {/* Kartu 2: Anggaran vs Pengeluaran Riil */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-[10px] font-semibold text-emerald-200/90">
+                      Sisa vs Riil
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300">
+                      {usagePercentage}%
+                    </span>
+                  </div>
+                  <div
+                    className={`text-sm sm:text-base font-extrabold tracking-tight mb-1.5 ${
+                      remainingSafeBudget < 0 ? 'text-rose-400' : 'text-emerald-300'
+                    }`}
+                  >
+                    {formatRupiah(remainingSafeBudget)}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mb-1.5">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${budgetStatus.barColor}`}
+                      style={{ width: `${Math.min(100, Math.max(0, usagePercentage))}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Terpakai:</span>
+                    <span className="font-semibold text-slate-200">
+                      {formatRupiah(totalActualExpense)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1582,7 +1691,8 @@ export default function App() {
               <div className="mt-2.5 bg-amber-500/20 border border-amber-400/40 rounded-xl px-2.5 py-1.5 flex items-center gap-2 text-[11px] text-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                 <span>
-                  Total estimasi rencana ({formatRupiah(totalEstimatedPlan)}) melebihi batas budget bulanan!
+                  Total estimasi rencana ({formatRupiah(totalEstimatedPlan)}) melebihi anggaran sebesar{' '}
+                  <strong>{formatRupiah(Math.abs(remainingPlanBudget))}</strong>!
                 </span>
               </div>
             )}
@@ -1670,7 +1780,10 @@ export default function App() {
                           {weekPlans.length} agenda main
                         </span>
                         <button
-                          onClick={() => setExportModal({ isOpen: true, week })}
+                          onClick={() => {
+                            setGeneratedImageUrl(null);
+                            setExportModal({ isOpen: true, week });
+                          }}
                           className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 px-2.5 py-1 rounded-lg transition-colors"
                         >
                           <Printer className="w-3.5 h-3.5 text-rose-500" />
@@ -2677,7 +2790,10 @@ export default function App() {
                   </h3>
                 </div>
                 <button
-                  onClick={() => setExportModal({ isOpen: false, week: null })}
+                  onClick={() => {
+                    setGeneratedImageUrl(null);
+                    setExportModal({ isOpen: false, week: null });
+                  }}
                   className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full"
                 >
                   <X className="w-5 h-5" />
@@ -2790,6 +2906,25 @@ export default function App() {
                         <span>Cetak / Simpan PDF</span>
                       </button>
                     </div>
+
+                    {/* Pratinjau Gambar PNG Siap Simpan (Khusus iOS / Long-Press Save) */}
+                    {generatedImageUrl && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700">
+                            Hasil Gambar Siap Simpan
+                          </span>
+                          <span className="text-[10px] font-semibold text-rose-600">
+                            Tekan & tahan gambar → Simpan ke Foto
+                          </span>
+                        </div>
+                        <img
+                          src={generatedImageUrl}
+                          alt={`Jadwal ${week.label}`}
+                          className="w-full rounded-xl border border-slate-200 shadow-xs"
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })()}
