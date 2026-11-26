@@ -50,7 +50,7 @@ import {
 // ============================================================================
 
 const FIREBASE_CONFIG = {
-  aapiKey: "AIzaSyA4o4XsS-LUxR6uiSyHWM5mQJPHtIEb7v0",
+  apiKey: "AIzaSyA4o4XsS-LUxR6uiSyHWM5mQJPHtIEb7v0",
   authDomain: "kitamain-couple.firebaseapp.com",
   projectId: "kitamain-couple",
   storageBucket: "kitamain-couple.firebasestorage.app",
